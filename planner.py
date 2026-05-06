@@ -29,8 +29,8 @@ st.caption("Enter a topic and get a day-by-day study plan with PDF and Excel dow
 # ── Sidebar — API keys ───────────────────────────────────────────────────────
 with st.sidebar:
     st.header("API Keys")
-    groq_key   = st.text_input("Groq API Key",   type="password", placeholder="gsk_...")
-    tavily_key = st.text_input("Tavily API Key (optional)", type="password", placeholder="tvly-...")
+    groq_key   = st.secrets.get("GROQ_API_KEY", "")
+    tavily_key = st.secrets.get("TAVILY_API_KEY", "")
     st.caption("Keys are never stored. They live only in your browser session.")
     st.divider()
     st.markdown("**Models used**")
