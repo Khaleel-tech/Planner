@@ -1,11 +1,15 @@
 import streamlit as st
 import json, re, io
+
 from groq import Groq
 from tavily import TavilyClient
+
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
+
 from openpyxl import Workbook
+
 
 # ─────────────────────────────────────────
 # CONFIG
@@ -19,10 +23,11 @@ st.title("🗺️ AI Learning Roadmap Generator")
 try:
     GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 except:
-    st.error("GROQ_API_KEY not found in Streamlit Secrets")
+    st.error("Missing GROQ_API_KEY in Streamlit Secrets")
     st.stop()
 
 TAVILY_API_KEY = st.secrets.get("TAVILY_API_KEY", None)
+
 
 # ─────────────────────────────────────────
 # INPUTS
@@ -31,6 +36,7 @@ topic = st.text_input("What do you want to learn?")
 level = st.selectbox("Level", ["beginner", "intermediate", "advanced"])
 days = st.slider("Days", 3, 30, 14)
 hours = st.slider("Hours per day", 1, 8, 2)
+
 
 # ─────────────────────────────────────────
 # FUNCTIONS
@@ -46,21 +52,39 @@ def fetch_resources(topic, level):
             query=f"best resources to learn {topic} for {level}",
             max_results=5
         )
-        return [{"title": r["title"], "url": r["url"]} for r in results["results"]]
+        return [{"title": r["title"], "url": r["url"]} for r in results.get("results", [])]
     except:
         return []
+
+
+def safe_json_parse(raw):
+    raw = re.sub(r'```json|```', '', raw)
+    try:
+        return json.loads(raw)
+    except:
+        return None
 
 
 def generate_roadmap(topic, days, hours, level, resources):
     client = Groq(api_key=GROQ_API_KEY)
 
     prompt = f"""
-Create a {days}-day roadmap for learning {topic}.
-Level: {level}, Hours/day: {hours}
+Return ONLY valid JSON.
 
-Return JSON with:
-title, overview, totalDays, hoursPerDay, level,
-phases, days, resources
+{{
+  "title": "Learning Roadmap: {topic}",
+  "overview": "Short summary",
+  "totalDays": {days},
+  "hoursPerDay": {hours},
+  "level": "{level}",
+  "days": [
+    {{
+      "day": 1,
+      "title": "Topic title",
+      "description": "What to study"
+    }}
+  ]
+}}
 """
 
     response = client.chat.completions.create(
@@ -70,9 +94,19 @@ phases, days, resources
     )
 
     raw = response.choices[0].message.content.strip()
-    raw = re.sub(r'```json|```', '', raw)
+    data = safe_json_parse(raw)
 
-    return json.loads(raw)
+    if not data:
+        st.error("LLM returned invalid JSON")
+        st.text(raw)
+        st.stop()
+
+    # fallback safety
+    data.setdefault("title", f"Learning Roadmap: {topic}")
+    data.setdefault("overview", "No overview generated")
+    data.setdefault("days", [])
+
+    return data
 
 
 def generate_pdf(roadmap):
@@ -82,12 +116,15 @@ def generate_pdf(roadmap):
     styles = getSampleStyleSheet()
     story = []
 
-    story.append(Paragraph(roadmap["title"], styles["Title"]))
+    story.append(Paragraph(roadmap.get("title", ""), styles["Title"]))
     story.append(Spacer(1, 10))
 
-    for day in roadmap["days"]:
-        story.append(Paragraph(f"Day {day['day']}: {day['title']}", styles["Heading2"]))
-        story.append(Paragraph(day["description"], styles["Normal"]))
+    for day in roadmap.get("days", []):
+        story.append(Paragraph(
+            f"Day {day.get('day','?')}: {day.get('title','No title')}",
+            styles["Heading2"]
+        ))
+        story.append(Paragraph(day.get("description", ""), styles["Normal"]))
         story.append(Spacer(1, 8))
 
     doc.build(story)
@@ -102,8 +139,12 @@ def generate_excel(roadmap):
 
     ws.append(["Day", "Title", "Description"])
 
-    for d in roadmap["days"]:
-        ws.append([d["day"], d["title"], d["description"]])
+    for d in roadmap.get("days", []):
+        ws.append([
+            d.get("day", ""),
+            d.get("title", ""),
+            d.get("description", "")
+        ])
 
     wb.save(buffer)
     buffer.seek(0)
@@ -111,7 +152,7 @@ def generate_excel(roadmap):
 
 
 # ─────────────────────────────────────────
-# MAIN
+# MAIN LOGIC
 # ─────────────────────────────────────────
 if st.button("Generate Roadmap"):
 
@@ -125,17 +166,17 @@ if st.button("Generate Roadmap"):
     with st.spinner("Generating roadmap..."):
         roadmap = generate_roadmap(topic, days, hours, level, resources)
 
-    st.success("Roadmap generated!")
+    st.success("Roadmap generated successfully!")
 
     # DISPLAY
-    st.subheader(roadmap["title"])
-    st.write(roadmap["overview"])
+    st.subheader(roadmap.get("title"))
+    st.write(roadmap.get("overview"))
 
-    for day in roadmap["days"]:
-        with st.expander(f"Day {day['day']} - {day['title']}"):
-            st.write(day["description"])
+    for day in roadmap.get("days", []):
+        with st.expander(f"Day {day.get('day','?')} - {day.get('title','No title')}"):
+            st.write(day.get("description", ""))
 
-    # DOWNLOADS
+    # DOWNLOAD
     pdf = generate_pdf(roadmap)
     excel = generate_excel(roadmap)
 
