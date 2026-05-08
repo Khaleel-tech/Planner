@@ -452,7 +452,9 @@ def generate_pdf(roadmap):
              rightMargin=2*cm, leftMargin=2*cm,
              topMargin=2*cm,   bottomMargin=2*cm)
 
-    S = lambda name, **kw: ParagraphStyle(name, parent=styles["Normal"], **kw)
+    def S(name, parent=None, **kw):
+        return ParagraphStyle(name, parent=parent or styles["Normal"], **kw)
+
     S_TITLE  = S("t",  parent=styles["Title"],   fontSize=22, spaceAfter=6,   textColor=colors.HexColor("#111111"))
     S_META   = S("m",  fontSize=10, spaceAfter=12, textColor=colors.HexColor("#666666"))
     S_SEC    = S("s",  parent=styles["Heading2"], fontSize=13, spaceBefore=18, spaceAfter=8, textColor=colors.HexColor("#222222"))
